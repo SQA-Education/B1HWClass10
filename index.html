@@ -175,11 +175,12 @@ body{font-family:'Segoe UI',sans-serif;background:#5B5091;min-height:100vh;paddi
 </div>
 
 <script>
-const SESSION='Session 10';
+const SESSION='10';
 let sn='',sc={l:0,v:0,w:0,s:0,g:0},cs=1,selectedWord=null;
 let voices=[],isSpeaking=false;
-let mr,ac,isRec=false,rs=0,ri;
+let isRec=false,recTime=0,recTimer=null,recognition=null;
 let speechTranscript='';
+let submitted=false;
 
 const listeningScript=[
 {speaker:'Narrator',text:'Tom had a job interview at 10 AM. He left home early, but many things went wrong.'},
@@ -247,6 +248,7 @@ function startHomework(){
   setTeacher(document.getElementById('className'));
   document.getElementById('teacherName').value=document.getElementById('className').options[document.getElementById('className').selectedIndex].getAttribute('data-teacher')||'';
   var info=document.getElementById('studentInfoSection');if(info)info.style.display='none';
+  document.getElementById('progressBar').style.display='block';
   goTo(1);
 }
 
@@ -317,43 +319,34 @@ function submitWriting(){
     const wc=t.trim().split(/\s+/).filter(x=>x).length;
     document.getElementById('writingLoading').classList.add('visible');
     setTimeout(()=>{
-        // Check for problem vocabulary
         const probWords=['traffic','jam','delay','late','crowded','slow','problem','issue','broke','flat','maintenance','rush hour','accident'];
         const foundProb=probWords.filter(w=>t.includes(w)).length;
         
-        // Check for solution vocabulary
         const solWords=['should','could','need','better','more','improve','solution','build','add','fix'];
         const foundSol=solWords.filter(w=>t.includes(w)).length;
         const hasBoth=foundProb>0&&foundSol>0;
         
-        // Check for grammar errors
         let errors=[];
         let errorCount=0;
         
-        // Subject-verb agreement
-        const svErrors=[/the bus is delayed/i,/i goes/i,/he go /i,/she go /i,/it go /i,/they goes/i,/the traffic are/i,/the problem are/i];
         if(/i goes/i.test(t)||/he go /i.test(t)||/she go /i.test(t)||/they goes/i.test(t)){errors.push('Subject-verb agreement error');errorCount++;}
         
-        // Wrong tense usage
         const tenseMix=[/yesterday.{0,15}(is|are|has)/i,/last week.{0,15}(is|are)/i,/every day.{0,15}(was|were)/i];
         tenseMix.forEach(pattern=>{if(pattern.test(t)){errors.push('Tense error: Check past vs present tense');errorCount++;}});
         
-        // Common errors
         const commonErrors=[/there is many/i,/there are much/i,/more better/i,/most best/i,/should to/i,/must to/i];
         commonErrors.forEach(pattern=>{if(pattern.test(t)){errors.push('Grammar error: Check "there is/are" or modal verb usage');errorCount++;}});
         
-        // Article errors
         const articleErrors=[/go to the work/i,/go to the home/i,/at the home/i];
         articleErrors.forEach(pattern=>{if(pattern.test(t)){errors.push('Article error: "go to work" not "go to the work"');errorCount++;}});
         
-        // Calculate score
         let score=0;
-        score+=Math.min(6,foundProb*1.5); // Problem vocab (max 6)
-        score+=Math.min(6,foundSol*2); // Solution vocab (max 6)
-        score+=(hasBoth?2:0); // Has both (2)
-        score+=(wc>=50?4:wc>=30?2:0); // Word count (max 4)
-        score-=(errorCount*2); // Deduct 2 points per error
-        score=Math.max(0,Math.min(20,Math.round(score))); // Keep between 0-20
+        score+=Math.min(6,foundProb*1.5);
+        score+=Math.min(6,foundSol*2);
+        score+=(hasBoth?2:0);
+        score+=(wc>=50?4:wc>=30?2:0);
+        score-=(errorCount*2);
+        score=Math.max(0,Math.min(20,Math.round(score)));
         
         sc.w=score;
         
@@ -378,8 +371,6 @@ function submitWriting(){
     },1500);
 }
 
-let submitted=false;
-function isRealSpeech(t){if(!t||!t.trim())return false;var w=t.trim().split(' ').filter(Boolean);return w.length>=3;}
 function setTeacher(sel){
   var opt=sel.options[sel.selectedIndex];
   var th=document.getElementById('teacherName');
@@ -393,16 +384,20 @@ function startRec(){
   var box=document.getElementById('transcriptBox');
   if(box){box.textContent='';box.style.display='none';}
   isRec=true;recTime=0;
-  var mb=document.getElementById('recordBtn')||document.getElementById('recBtn')||document.getElementById('micBtn');
+  var mb=document.getElementById('recordBtn');
   if(mb)mb.classList.add('recording');
-  var rs2=document.getElementById('recordingStatus')||document.getElementById('recStatus')||document.getElementById('statusText');
-  if(rs2)rs2.textContent='Recording... tap again to stop';
-  recTimer=setInterval(function(){recTime++;var t=document.getElementById('recordingTimer')||document.getElementById('timer')||document.getElementById('recTimer');if(t)t.textContent=Math.floor(recTime/60)+':'+String(recTime%60).padStart(2,'0');},1000);
+  var rstat=document.getElementById('recordingStatus');
+  if(rstat)rstat.textContent='Recording... tap again to stop';
+  recTimer=setInterval(function(){recTime++;var t=document.getElementById('recordingTimer');if(t)t.textContent=Math.floor(recTime/60)+':'+String(recTime%60).padStart(2,'0');},1000);
   recognition=new SR();
-  recognition.continuous=false;recognition.interimResults=false;recognition.lang='en-US';
+  recognition.continuous=false;recognition.interimResults=true;recognition.lang='en-US';
   recognition.onresult=function(e){
-    for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)speechTranscript+=e.results[i][0].transcript+' ';}
-    if(box){box.textContent=speechTranscript.trim();box.style.display='block';box.style.visibility='visible';}
+    var interim='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal)speechTranscript+=e.results[i][0].transcript+' ';
+      else interim+=e.results[i][0].transcript;
+    }
+    if(box){box.textContent=(speechTranscript+interim).trim();box.style.display='block';box.style.visibility='visible';}
   };
   recognition.onerror=function(){};
   recognition.onend=function(){if(isRec){try{recognition.start();}catch(err){}}};
@@ -411,29 +406,27 @@ function startRec(){
 function stopRec(){
   isRec=false;clearInterval(recTimer);
   if(recognition){try{recognition.stop();}catch(e){} recognition=null;}
-  var mb=document.getElementById('recordBtn')||document.getElementById('recBtn')||document.getElementById('micBtn');
+  var mb=document.getElementById('recordBtn');
   if(mb)mb.classList.remove('recording');
-  var rs2=document.getElementById('recordingStatus')||document.getElementById('recStatus')||document.getElementById('statusText');
-  if(rs2)rs2.textContent='Recording saved!';
-  var sn2=document.getElementById('submitSpeakingBtn')||document.getElementById('speakNext')||document.getElementById('sBtn');
+  var rstat=document.getElementById('recordingStatus');
+  if(rstat)rstat.textContent='Recording saved!';
+  var sn2=document.getElementById('submitSpeakingBtn');
   if(sn2)sn2.disabled=false;
 }
 
 function submitSpeaking(){
   try{
-
     document.getElementById('speakingLoading').classList.add('visible');
     setTimeout(()=>{
-        sc.s=rs>=30?20:rs>=20?15:rs>=10?10:5;
-        document.getElementById('speakingFeedback').innerHTML='<h4>Feedback</h4><p>Duration: '+Math.floor(rs/60)+':'+(rs%60).toString().padStart(2,'0')+'</p><p><strong>Score: '+sc.s+'/20</strong></p>';
+        var dur=recTime||0;
+        sc.s=dur>=30?20:dur>=20?15:dur>=10?10:5;
+        document.getElementById('speakingFeedback').innerHTML='<h4>Feedback</h4><p>Duration: '+Math.floor(dur/60)+':'+(dur%60).toString().padStart(2,'0')+'</p><p><strong>Score: '+sc.s+'/20</strong></p>';
         document.getElementById('speakingLoading').classList.remove('visible');
         document.getElementById('speakingFeedback').classList.add('visible');
         goTo(5);
     },1500);
-
   }catch(e){console.log('err:',e);}finally{goTo(5);}
 }
-
 
 function submitFinal(){
     let c=0;
@@ -492,7 +485,6 @@ function submitToTeacher(){
       if(status){status.innerHTML='Submission failed. Check your internet and try again.';status.style.display='block';status.style.background='#fef2f2';}
     });
 }
-
 </script>
 </body>
 </html>
