@@ -11,6 +11,7 @@ body{font-family:'Segoe UI',sans-serif;background:#5B5091;min-height:100vh;paddi
 .header{background:#fff;border-radius:20px;padding:30px;margin-bottom:20px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.2)}
 .header h1{color:#5B5091;font-size:1.4em}
 .header p{color:#888}
+.level-badge{background:#5B5091;color:#fff;padding:6px 16px;border-radius:20px;font-size:.9em;display:inline-block;margin-bottom:10px;font-weight:600}
 .student-info{background:#fff;border-radius:16px;padding:25px;margin-bottom:20px}
 .student-info label{font-weight:600;color:#333;display:block;margin-bottom:8px}
 .student-info input,.student-info select{width:100%;padding:14px;border:2px solid #e0e0e0;border-radius:12px;font-size:16px;margin-bottom:15px}
@@ -93,9 +94,8 @@ body{font-family:'Segoe UI',sans-serif;background:#5B5091;min-height:100vh;paddi
 </head>
 <body>
 <div class="container">
-    <div class="header"><h1>🚗 Session 10: Transportation Issues</h1><p>Week 5 • Problems & Solutions</p></div>
+    <div class="header"><div class="level-badge">CEFR Level B1 - Intermediate</div><h1>🚗 B1 Session 10: Transportation Issues</h1><p>Week 5 • Problems & Solutions</p></div>
     <div class="student-info" id="studentInfoSection"><label>Your Full Name</label><input type="text" id="studentName" placeholder="Enter your name...">
-<label style="display:none">Your Teacher</label>
 <input type="hidden" id="teacherName" value="">
 <label>Your Class</label>
 <select id="className" style="width:100%;padding:14px;border:2px solid #e0e0e0;border-radius:12px;font-size:16px;margin-bottom:15px" onchange="setTeacher(this)">
@@ -151,7 +151,7 @@ body{font-family:'Segoe UI',sans-serif;background:#5B5091;min-height:100vh;paddi
         <div id="transcriptBox" class="transcript-box"></div>
         <div class="loading" id="speakingLoading"><div class="spinner"></div><span>Processing...</span></div>
         <div class="feedback-box" id="speakingFeedback"></div>
-        <div class="nav-buttons"><button class="btn btn-secondary" onclick="goTo(3)">← Back</button><button class="btn" id="submitSpeakingBtn" onclick="submitSpeaking()" >Continue →</button></div>
+        <div class="nav-buttons"><button class="btn btn-secondary" onclick="goTo(3)">← Back</button><button class="btn" id="submitSpeakingBtn" onclick="submitSpeaking()" disabled>Continue →</button></div>
     </div>
 
     <div class="section" id="section5">
@@ -246,7 +246,6 @@ function startHomework(){
   if(!sn){alert('Please enter your name');return;}
   if(!document.getElementById('className').value){alert('Please select your class');return;}
   setTeacher(document.getElementById('className'));
-  document.getElementById('teacherName').value=document.getElementById('className').options[document.getElementById('className').selectedIndex].getAttribute('data-teacher')||'';
   var info=document.getElementById('studentInfoSection');if(info)info.style.display='none';
   document.getElementById('progressBar').style.display='block';
   goTo(1);
@@ -415,17 +414,23 @@ function stopRec(){
 }
 
 function submitSpeaking(){
-  try{
-    document.getElementById('speakingLoading').classList.add('visible');
-    setTimeout(()=>{
-        var dur=recTime||0;
-        sc.s=dur>=30?20:dur>=20?15:dur>=10?10:5;
-        document.getElementById('speakingFeedback').innerHTML='<h4>Feedback</h4><p>Duration: '+Math.floor(dur/60)+':'+(dur%60).toString().padStart(2,'0')+'</p><p><strong>Score: '+sc.s+'/20</strong></p>';
-        document.getElementById('speakingLoading').classList.remove('visible');
-        document.getElementById('speakingFeedback').classList.add('visible');
-        goTo(5);
-    },1500);
-  }catch(e){console.log('err:',e);}finally{goTo(5);}
+  document.getElementById('speakingLoading').classList.add('visible');
+  setTimeout(function(){
+    var text=(speechTranscript||'').toLowerCase();
+    var probWords=['traffic','jam','delay','delayed','late','crowded','slow','problem','broke','broke down','flat','flat tire','maintenance','rush hour','accident','missed','train','bus','subway','taxi','car','bike','bicycle'];
+    var pastWords=['was','were','had','went','got','tried','called','waited','took','missed','arrived','decided','broke'];
+    var probHits=probWords.filter(w=>text.includes(w)).length;
+    var pastHits=pastWords.filter(w=>text.includes(w)).length;
+    var score=0;
+    if(probHits>=3) score+=10; else if(probHits>=1) score+=6;
+    if(pastHits>=3) score+=10; else if(pastHits>=1) score+=6;
+    if(score===0 && text.trim().length>0) score=4;
+    sc.s=Math.min(20,score);
+    document.getElementById('speakingFeedback').innerHTML='<h4>Feedback</h4><p>Transcript: '+(speechTranscript||'Not captured')+'</p><p>Transportation/problem words: '+probHits+'</p><p>Past simple verbs: '+pastHits+'</p><p><strong>Score: '+sc.s+'/20</strong></p>';
+    document.getElementById('speakingLoading').classList.remove('visible');
+    document.getElementById('speakingFeedback').classList.add('visible');
+    goTo(5);
+  },1500);
 }
 
 function submitFinal(){
@@ -471,19 +476,21 @@ function submitToTeacher(){
   formData.append('entry.1207114914',pct+'%');
   formData.append('entry.939912807',wt||'');
   formData.append('entry.2086302086',speechTranscript||'No transcript captured');
-  var status=document.getElementById('submitStatus');
+  function showSuccess(){
+    if(btn){btn.textContent='Submitted!';btn.style.background='#22c55e';btn.style.animation='none';btn.disabled=true;}
+    var w=document.getElementById('notSubmittedWarning');if(w)w.style.display='none';
+    var s=document.getElementById('submittedSuccess');if(s)s.style.display='block';
+  }
+  function showFailure(){
+    submitted=false;
+    if(btn){btn.disabled=false;btn.textContent='Failed - Tap to Retry';btn.style.background='#ef4444';}
+  }
+  // 6s timeout fallback for mobile (no-cors never errors on success)
+  var done=false;
+  var timeoutId=setTimeout(function(){if(!done){done=true;showSuccess();}},6000);
   fetch('https://docs.google.com/forms/d/e/1FAIpQLSf9uEs5MqWLveyoaMBxeWx3pW1b90siwgaom766CpwqnOI7Dg/formResponse',{method:'POST',mode:'no-cors',body:formData})
-    .then(function(){
-      if(btn){btn.textContent='Submitted!';btn.style.background='#22c55e';}
-      if(status){status.innerHTML='Homework submitted successfully! Your teacher received your work.';status.style.display='block';}
-      var w=document.getElementById('notSubmittedWarning');if(w)w.style.display='none';
-      var s=document.getElementById('submittedSuccess');if(s)s.style.display='block';
-    })
-    .catch(function(){
-      submitted=false;
-      if(btn){btn.disabled=false;btn.textContent='Failed - Tap to Retry';btn.style.background='#ef4444';}
-      if(status){status.innerHTML='Submission failed. Check your internet and try again.';status.style.display='block';status.style.background='#fef2f2';}
-    });
+    .then(function(){if(done)return;done=true;clearTimeout(timeoutId);showSuccess();})
+    .catch(function(){if(done)return;done=true;clearTimeout(timeoutId);showFailure();});
 }
 </script>
 </body>
